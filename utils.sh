@@ -122,19 +122,29 @@ stop_spinner() {
     fi
 }
 
-# Create an interactive list UI with keyboard navigation
+# Create an interactive list UI with keyboard navigation and scrolling
 # Returns: Selected index (0-based) or 255 if quit
-# Usage: show_list "item1" "item2" "item3"
-# Controls:
-#   - Up/Down arrows: Navigate items
-#   - Enter: Select current item
-#   - q/Q: Quit without selection
+# Usage: show_list "Title" "item1" "item2" "item3"
 show_list() {
     local title=$1
     shift || true
     local items=("$@")
     local selected=0
     local total=${#items[@]}
+    local scroll_offset=0
+    
+    # Calculate available rows for rendering
+    local term_height=0
+    if command -v tput >/dev/null 2>&1; then
+        term_height=$(tput lines)
+    else
+        term_height=24  # fallback height
+    fi
+    
+    # Reserve rows for title and potential status messages
+    local reserved_rows=4
+    local max_visible=$((term_height - reserved_rows))
+    local ROWS=$((max_visible > 10 ? 10 : max_visible))
     
     # Hide cursor during list display
     tput civis
@@ -146,8 +156,18 @@ show_list() {
         # Print title
         print "BLUE" "$title"
         
-        # Print items
-        for i in "${!items[@]}"; do
+        # Calculate visible range
+        local start_idx=$scroll_offset
+        local end_idx=$((scroll_offset + ROWS))
+        [ $end_idx -gt $total ] && end_idx=$total
+        
+        # Print scroll indicator if needed
+        if [ $scroll_offset -gt 0 ]; then
+            echo -e "${GRAY}↑ More items above${NC}"
+        fi
+        
+        # Print visible items
+        for ((i=start_idx; i<end_idx; i++)); do
             local prefix="$LIST_UNSELECTED_PREFIX"
             local color="$LIST_ITEM_COLOR"
             local cursor=" "
@@ -160,6 +180,11 @@ show_list() {
             printf "${!LIST_CURSOR_COLOR}%s${NC} ${!color}%s${NC}\n" "$cursor" "${items[$i]}"
         done
         
+        # Print scroll indicator if needed
+        if [ $end_idx -lt $total ]; then
+            echo -e "${GRAY}↓ More items below${NC}"
+        fi
+        
         # Read single character
         read -rsn1 key
         
@@ -168,12 +193,22 @@ show_list() {
                 read -rsn2 key
                 case "$key" in
                     "[A") # Up arrow
-                        ((selected--))
-                        [ $selected -lt 0 ] && selected=$((total - 1))
+                        if [ $selected -gt 0 ]; then
+                            ((selected--))
+                            # Scroll up if selected item would be out of view
+                            if [ $selected -lt $scroll_offset ]; then
+                                ((scroll_offset--))
+                            fi
+                        fi
                         ;;
                     "[B") # Down arrow
-                        ((selected++))
-                        [ $selected -eq $total ] && selected=0
+                        if [ $selected -lt $((total - 1)) ]; then
+                            ((selected++))
+                            # Scroll down if selected item would be out of view
+                            if [ $selected -ge $((scroll_offset + ROWS)) ]; then
+                                ((scroll_offset++))
+                            fi
+                        fi
                         ;;
                 esac
                 ;;

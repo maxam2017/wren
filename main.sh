@@ -6,8 +6,7 @@ PROJECT_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 INSTALL_DIR="/usr/local/lib/$SCRIPT_NAME"
 INSTALL_PATH="/usr/local/bin/$SCRIPT_NAME"
 
-# TODO: don't limit the number of branches, render a scrollable list
-MAX_BRANCHES=10
+MAX_BRANCHES=100
 
 source "$PROJECT_ROOT/bootstrap.sh"
 bootstrap "$SCRIPT_NAME" "DEBUG=true"
@@ -132,10 +131,7 @@ show_commands() {
             array_append all_branches "$branch"
             ((branch_count++))
         fi
-    done < <(git branch)
-
-    echo "all_branches: $(array_join all_branches "||")"
-
+    done < <(git branch --sort=-committerdate)
 
     local branches # order: last to first
     array_create branches
@@ -164,7 +160,6 @@ show_commands() {
             fi
         fi
     done
-
 
     # Show branch selection menu
     set +e
