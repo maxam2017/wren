@@ -7,6 +7,7 @@ A CLI tool that helps you switch between Git branches.
 - 📜 Shows recently visited branches first
 - 🪜 Quick branch switching with an interactive menu
 - 🔍 Filter branches with a search bar
+- 💾 Save and restore your current session automatically when switching branches
 
 ## 🚀 Getting Started
 
@@ -33,6 +34,17 @@ wren upgrade        # Update to latest version
 wren uninstall      # Remove Wren from your system
 wren --help         # Show help information
 ```
+
+## 🧤 Demo
+Branch Menu
+
+![wren](https://github.com/user-attachments/assets/6d2f3226-097c-4e4e-97ea-d0ab37a8022b)
+
+
+Filter
+
+![wren-filtering](https://github.com/user-attachments/assets/73487790-840f-4aed-86db-35c136ee47a8)
+
 
 ## Acknowledgements
 

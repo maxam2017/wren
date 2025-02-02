@@ -95,9 +95,51 @@ check_git() {
     fi
 }
 
+# Add this function after check_git()
+check_uncommitted_changes() {
+    # Check for staged/unstaged changes
+    if ! git diff-index --quiet HEAD --; then
+        return 0  # Has changes
+    fi
+    # Check for untracked files
+    if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+        return 0  # Has untracked files
+    fi
+    return 1  # No changes
+}
+
+save_session() {
+    local branch="$1"
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local stash_message="wren_autosave_${branch}_${timestamp}"
+    
+    # Add untracked files to the stash
+    if git stash push --include-untracked -m "$stash_message" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
+restore_session() {
+    local branch="$1"
+    local stash_list
+    stash_list=$(git stash list | grep "wren_autosave_${branch}_" | head -n 1)
+    
+    if [ -n "$stash_list" ]; then
+        local stash_index=$(echo "$stash_list" | cut -d: -f1)
+        # Use --index to restore both staged and unstaged changes
+        if git stash apply --index "$stash_index" >/dev/null 2>&1; then
+            git stash drop "$stash_index" >/dev/null 2>&1
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # Switch to the selected branch
 switch_branch() {
     local branch="$1"
+    local current_branch=$(git branch --show-current)
     
     # Remove "(deleted)" suffix if present
     branch="${branch% (deleted)}"
@@ -109,15 +151,53 @@ switch_branch() {
     fi
 
     echo
-    start_spinner "🪜  Hopping over to '$branch'..."
+    start_spinner "🔍 Checking branch status..."
+    
+    # Check for uncommitted changes
+    if check_uncommitted_changes; then
+        stop_spinner "👀 Found uncommitted changes or untracked files"
+
+        # Save session
+        start_spinner "💾  Saving your work..."
+        if save_session "$current_branch"; then
+            stop_spinner "💾 Work saved successfully"
+        else
+            stop_spinner "❌ Failed to save work"
+            return 1
+        fi
+    else
+        stop_spinner "👀 Branch is clean"
+    fi
+    
+    start_spinner "🪜 Hopping over to '$branch'..."
     
     if git checkout "$branch" >/dev/null 2>&1; then
         stop_spinner "✨ Successfully landed on '$branch'"
+        
+        # Check for saved session
+        start_spinner "🔍 Checking for saved work..."
+        if restore_session "$branch"; then
+            stop_spinner "📝 Restored your previous work on this branch"
+        else
+            stop_spinner "👀 No saved work found"
+        fi
+        
         return 0
     else
         stop_spinner "Error: Failed to switch to '$branch'"
         return 1
     fi
+}
+
+# Add this helper function
+confirm() {
+    local message="$1"
+    local options=("Yes" "No")
+    
+    show_list "$message" "${options[@]}"
+    local choice=$?
+    
+    [ "$choice" -eq 0 ]
 }
 
 show_commands() {
