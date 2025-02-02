@@ -39,6 +39,7 @@ install_script() {
 }
 
 uninstall_script() {
+    sudo -v
     if [[ -f "$INSTALL_PATH" ]]; then
         start_spinner "🗑️  Uninstalling Wren..."
         if sudo rm "$INSTALL_PATH" && sudo rm -rf "$INSTALL_DIR"; then
