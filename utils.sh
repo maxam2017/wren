@@ -77,13 +77,15 @@ start_spinner() {
     if command -v tput >/dev/null 2>&1; then
         term_width=$(tput cols)
     else
-        # Fallback if tput is not available
         term_width=80
     fi
 
     local max_length=$((term_width - 10))
 
     _spin() {
+        # Setup signal handler
+        trap "exit 0" SIGTERM SIGINT
+        
         while true; do
             for char in "${SPINNER_CHARS[@]}"; do
                 if [ ${#message} -gt $max_length ]; then
@@ -109,7 +111,7 @@ stop_spinner() {
     
     # Kill the spinner process if it exists
     if [ ! -z "$_SPINNER_PID" ]; then
-        kill $_SPINNER_PID
+        kill $_SPINNER_PID 2>/dev/null
         _SPINNER_PID=""
         
         # Clear the spinner line
@@ -122,7 +124,7 @@ stop_spinner() {
     fi
 }
 
-# Create an interactive list UI with keyboard navigation and scrolling
+# Create an interactive list UI with keyboard navigation, scrolling and search
 # Returns: Selected index (0-based) or 255 if quit
 # Usage: show_list "Title" "item1" "item2" "item3"
 show_list() {
@@ -132,6 +134,10 @@ show_list() {
     local selected=0
     local total=${#items[@]}
     local scroll_offset=0
+    local search_query=""
+    local filtered_items=()
+    local search_mode=false
+    local temp_search=""
     
     # Calculate available rows for rendering
     local term_height=0
@@ -141,10 +147,50 @@ show_list() {
         term_height=24  # fallback height
     fi
     
-    # Reserve rows for title and potential status messages
-    local reserved_rows=4
+    # Reserve rows for title, search bar and potential status messages
+    local reserved_rows=5
     local max_visible=$((term_height - reserved_rows))
     local ROWS=$((max_visible > 10 ? 10 : max_visible))
+
+    # Get terminal width
+    local term_width=0
+    if command -v tput >/dev/null 2>&1; then
+        term_width=$(tput cols)
+    else
+        # Fallback if tput is not available
+        term_width=80
+    fi
+
+    local max_length=$((term_width - 10))
+    
+    # Filter items based on search query
+    filter_items() {
+        filtered_items=()
+        local query=$(echo "$search_query" | tr '[:upper:]' '[:lower:]')
+        local idx=0
+        for item in "${items[@]}"; do
+            if [[ -z "$query" ]] || [[ "$(echo "$item" | tr '[:upper:]' '[:lower:]')" == *"$query"* ]]; then
+                filtered_items+=("$item")
+            fi
+        done
+        total=${#filtered_items[@]}
+        
+        # Reset selection and scroll if needed
+        if [ $selected -ge $total ]; then
+            selected=$((total - 1))
+            [ $selected -lt 0 ] && selected=0
+        fi
+        if [ $scroll_offset -gt $((total - ROWS)) ]; then
+            scroll_offset=$((total - ROWS))
+            [ $scroll_offset -lt 0 ] && scroll_offset=0
+        fi
+    }
+    
+    # Initialize with all items
+    filtered_items=("${items[@]}")
+    total=${#filtered_items[@]}
+    selected=0
+    scroll_offset=0
     
     # Hide cursor during list display
     tput civis
@@ -152,80 +198,190 @@ show_list() {
     while true; do
         # Clear screen from cursor position
         echo -ne "\033[2J\033[H"
-
-        # Print title
+        
+        # Print title and filter status with hints
         print "BLUE" "$title"
-        
-        # Calculate visible range
-        local start_idx=$scroll_offset
-        local end_idx=$((scroll_offset + ROWS))
-        [ $end_idx -gt $total ] && end_idx=$total
-        
-        # Print scroll indicator if needed
-        if [ $scroll_offset -gt 0 ]; then
-            echo -e "${GRAY}↑ More items above${NC}"
-        fi
-        
-        # Print visible items
-        for ((i=start_idx; i<end_idx; i++)); do
-            local prefix="$LIST_UNSELECTED_PREFIX"
-            local color="$LIST_ITEM_COLOR"
-            local cursor=" "
+        if [ -n "$search_query" ]; then
+            if [ $total -eq 0 ]; then
+                echo -e "${RED}No matches found for: $search_query${NC}"
+                echo -e "${GRAY}(ESC to clear, / to search)${NC}"
+                echo
+                echo -e "${GRAY}🐦 No branches in sight!${NC}"
+                echo -e "${GRAY}This wren couldn't spot any matching branches.${NC}"
+                echo -e "${GRAY}Try another search or press ESC to see all branches.${NC}"
+            else
+                echo -e "${GRAY}Filter: $search_query (ESC to clear, / to search)${NC}"
+                
+                # Calculate visible range
+                local start_idx=$scroll_offset
+                local end_idx=$((scroll_offset + ROWS))
+                [ $end_idx -gt $total ] && end_idx=$total
+                
+                # Print scroll indicator if needed
+                if [ $scroll_offset -gt 0 ]; then
+                    echo -e "${GRAY}↑ More branches above${NC}"
+                fi
+                
+                # Print visible items
+                for ((i=start_idx; i<end_idx; i++)); do
+                    local prefix="$LIST_UNSELECTED_PREFIX"
+                    local color="$LIST_ITEM_COLOR"
+                    local cursor=" "
+                    
+                    if [ $i -eq $selected ]; then
+                        cursor="$LIST_CURSOR"
+                        color="$LIST_CURSOR_COLOR"
+                    fi
+                    
+                    item="${filtered_items[$i]}"
+                    if [ ${#item} -gt $max_length ]; then
+                        item="${item:0:$max_length}..."
+                    fi
+                    printf "${!LIST_CURSOR_COLOR}%s${NC} ${!color}%s${NC}\n" "$cursor" "$item"
+                done
+                
+                # Print scroll indicator if needed
+                if [ $end_idx -lt $total ]; then
+                    echo -e "${GRAY}↓ More branches below${NC}"
+                fi
+            fi
+        else
+            # Normal unfiltered view
+            # Calculate visible range
+            local start_idx=$scroll_offset
+            local end_idx=$((scroll_offset + ROWS))
+            [ $end_idx -gt $total ] && end_idx=$total
             
-            if [ $i -eq $selected ]; then
-                cursor="$LIST_CURSOR"
-                color="$LIST_CURSOR_COLOR"
+            # Print scroll indicator if needed
+            if [ $scroll_offset -gt 0 ]; then
+                echo -e "${GRAY}↑ More branches above${NC}"
             fi
             
-            printf "${!LIST_CURSOR_COLOR}%s${NC} ${!color}%s${NC}\n" "$cursor" "${items[$i]}"
-        done
-        
-        # Print scroll indicator if needed
-        if [ $end_idx -lt $total ]; then
-            echo -e "${GRAY}↓ More items below${NC}"
+            # Print visible items
+            for ((i=start_idx; i<end_idx; i++)); do
+                local prefix="$LIST_UNSELECTED_PREFIX"
+                local color="$LIST_ITEM_COLOR"
+                local cursor=" "
+                
+                if [ $i -eq $selected ]; then
+                    cursor="$LIST_CURSOR"
+                    color="$LIST_CURSOR_COLOR"
+                fi
+                
+                item="${filtered_items[$i]}"
+                if [ ${#item} -gt $max_length ]; then
+                    item="${item:0:$max_length}..."
+                fi
+                printf "${!LIST_CURSOR_COLOR}%s${NC} ${!color}%s${NC}\n" "$cursor" "$item"
+            done
+            
+            # Print scroll indicator if needed
+            if [ $end_idx -lt $total ]; then
+                echo -e "${GRAY}↓ More branches below${NC}"
+            fi
         fi
         
-        # Read single character
-        read -rsn1 key
+        # Print search bar at the bottom if in search mode
+        if [ "$search_mode" = true ]; then
+            echo # Empty line before search
+            echo -ne "${BLUE}Search:${NC} $temp_search"
+            tput cnorm  # Show cursor in search mode
+        else
+            tput civis  # Hide cursor when not in search mode
+        fi
         
-        case "$key" in
-            $'\x1B')  # Handle escape sequences
-                read -rsn2 key
-                case "$key" in
-                    "[A") # Up arrow
+        if [ "$search_mode" = true ]; then
+            read -rsn1 search_char
+            case "$search_char" in
+                $'\x1B')  # ESC in search mode
+                    search_mode=false
+                    temp_search=""
+                    continue
+                    ;;
+                $'\x7F')  # Backspace
+                    if [ -n "$temp_search" ]; then
+                        temp_search="${temp_search%?}"
+                    fi
+                    continue
+                    ;;
+                "")  # Enter
+                    search_mode=false
+                    if [ -n "$temp_search" ]; then
+                        search_query="$temp_search"
+                        filter_items
+                    else
+                        search_query=""
+                        filtered_items=("${items[@]}")
+                        total=${#filtered_items[@]}
+                        selected=0
+                        scroll_offset=0
+                    fi
+                    temp_search=""
+                    continue
+                    ;;
+                *)  # Any other character
+                    if [[ "$search_char" =~ [[:print:]] ]]; then
+                        temp_search="$temp_search$search_char"
+                    fi
+                    continue
+                    ;;
+            esac
+        else
+            read -rsn1 input
+            # Handle ESC key
+            if [[ "$input" == $'\x1B' ]]; then
+                # Read arrow keys and handle them
+                read -rsn2 arrow 2>/dev/null || arrow=""
+                case "$arrow" in
+                    "[A")  # Up arrow
                         if [ $selected -gt 0 ]; then
                             ((selected--))
-                            # Scroll up if selected item would be out of view
                             if [ $selected -lt $scroll_offset ]; then
                                 ((scroll_offset--))
                             fi
                         fi
                         ;;
-                    "[B") # Down arrow
+                    "[B")  # Down arrow
                         if [ $selected -lt $((total - 1)) ]; then
                             ((selected++))
-                            # Scroll down if selected item would be out of view
                             if [ $selected -ge $((scroll_offset + ROWS)) ]; then
                                 ((scroll_offset++))
                             fi
                         fi
                         ;;
+                    *)  # Plain ESC or other sequence
+                        if [ -n "$search_query" ]; then
+                            search_query=""
+                            filtered_items=("${items[@]}")
+                            total=${#filtered_items[@]}
+                            selected=0
+                            scroll_offset=0
+                        fi
+                        ;;
                 esac
-                ;;
-            "") # Enter key
-                # Show cursor again
+            elif [[ "$input" == "/" ]]; then
+                search_mode=true
+                temp_search="$search_query"
+                continue
+            elif [[ "$input" == "" ]]; then  # Enter
                 tput cnorm
-                return $selected
-                ;;
-            q|Q) # Quit
-                # Show cursor again
+                if [ $total -gt 0 ]; then
+                    local selected_item="${filtered_items[$selected]}"
+                    for ((i=0; i<${#items[@]}; i++)); do
+                        if [ "${items[$i]}" = "$selected_item" ]; then
+                            return $i
+                        fi
+                    done
+                fi
+                return 255
+            elif [[ "$input" == "q" ]] || [[ "$input" == "Q" ]]; then
                 tput cnorm
                 echo
                 return 255
-                ;;
-        esac
+            fi
+        fi
     done
-
+    
     # Show cursor again
     tput cnorm
 }

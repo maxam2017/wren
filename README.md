@@ -6,7 +6,7 @@ Wren is a CLI tool that helps you hop between Git branches.
 
 - 📜 Shows recently visited branches first
 - 🪜 Quick branch switching with an interactive menu
-
+- 🔍 Filter branches with a search bar
 
 ## 🎮 Usage
 

@@ -56,8 +56,8 @@ _error_handler() {
 
 # Basic cleanup
 _cleanup() {
-    # Add cleanup logic here
-    :
+    # Always ensure cursor is visible
+    tput cnorm
 }
 
 # Import helper (will be used by other modules)
