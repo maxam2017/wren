@@ -53,6 +53,11 @@ uninstall_script() {
     fi
 }
 
+upgrade_script() {
+    # run ./install.sh
+    "$PROJECT_ROOT/install.sh"
+}
+
 show_help() {
     cat << EOF
 Usage: $SCRIPT_NAME COMMAND [OPTIONS]
@@ -223,6 +228,10 @@ main() {
             ;;
         uninstall)
             uninstall_script
+            exit 0
+            ;;
+        upgrade)
+            upgrade_script
             exit 0
             ;;
         "")
