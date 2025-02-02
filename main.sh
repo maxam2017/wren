@@ -65,6 +65,7 @@ Usage: $SCRIPT_NAME COMMAND [OPTIONS]
 Commands:
     install     Install the script and its dependencies
     uninstall   Remove the script and its dependencies
+    -           Quick switch to last visited branch
 
 Options:
     -h, --help     Show this help message
@@ -74,6 +75,7 @@ Examples:
     $SCRIPT_NAME install          # Install normally
     $SCRIPT_NAME install -f      # Force install/update
     $SCRIPT_NAME uninstall       # Remove installation
+    $SCRIPT_NAME -              # Quick switch to last branch
 EOF
 }
 
@@ -151,14 +153,11 @@ switch_branch() {
     fi
 
     echo
-    start_spinner "🔍 Checking branch status..."
+    start_spinner "💾 Saving your work..."
     
     # Check for uncommitted changes
     if check_uncommitted_changes; then
-        stop_spinner "👀 Found uncommitted changes or untracked files"
-
         # Save session
-        start_spinner "💾  Saving your work..."
         if save_session "$current_branch"; then
             stop_spinner "💾 Work saved successfully"
         else
@@ -166,20 +165,20 @@ switch_branch() {
             return 1
         fi
     else
-        stop_spinner "👀 Branch is clean"
+        stop_spinner "💾 No uncommitted changes"
     fi
-    
+
     start_spinner "🪜 Hopping over to '$branch'..."
     
     if git checkout "$branch" >/dev/null 2>&1; then
         stop_spinner "✨ Successfully landed on '$branch'"
         
         # Check for saved session
-        start_spinner "🔍 Checking for saved work..."
+        start_spinner "📝 Restoring your work..."
         if restore_session "$branch"; then
             stop_spinner "📝 Restored your previous work on this branch"
         else
-            stop_spinner "👀 No saved work found"
+            stop_spinner "📝 No saved work found"
         fi
         
         return 0
@@ -269,6 +268,17 @@ show_commands() {
     fi
 }
 
+get_last_branch() {
+    # Get the last branch we switched from (excluding the current branch)
+    local current_branch=$(git branch --show-current)
+    local last_branch=$(git reflog --no-abbrev |
+        grep -i 'checkout: moving from .* to' |
+        sed 's/.*moving from \(.*\) to.*/\1/' |
+        grep -v "^$current_branch$" |
+        head -n 1)
+    echo "$last_branch"
+}
+
 main() {
     local action="${1:-}"
     local force=false
@@ -290,6 +300,18 @@ main() {
                 ;;
         esac
     done
+
+    # Handle quick switch with '-'
+    if [ "$action" = "-" ]; then
+        check_git
+        local last_branch=$(get_last_branch)
+        if [ -n "$last_branch" ]; then
+            switch_branch "$last_branch"
+        else
+            error "No previous branch found"
+        fi
+        exit 0
+    fi
 
     # If no command provided, show interactive menu
     if [ -z "$action" ]; then

@@ -30,6 +30,7 @@ This will open an interactive menu showing all your branches, with recently visi
 
 ```bash
 wren                # Open interactive branch menu
+wren -              # Quick switch to last visited branch
 wren upgrade        # Update to latest version
 wren uninstall      # Remove Wren from your system
 wren --help         # Show help information
